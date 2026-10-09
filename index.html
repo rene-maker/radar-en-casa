@@ -75,6 +75,13 @@ button,input{font:inherit;color:inherit}
 .locate svg{width:20px;height:20px}
 .leaflet-control-attribution{font-size:10px}
 @media (prefers-color-scheme: dark){.basemap{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9)}}
+.windbtn{position:absolute;top:54px;left:8px;z-index:500;height:38px;padding:0 12px;border-radius:10px;border:0;cursor:pointer;
+  background:color-mix(in srgb,var(--surface) 92%,transparent);color:var(--fg);display:flex;align-items:center;gap:6px;box-shadow:0 1px 6px #0002;font-size:.85rem;font-weight:700}
+.windbtn svg{width:18px;height:18px}
+.windbtn[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg)}
+.wind{display:flex;flex-direction:column;align-items:center;gap:0;pointer-events:none;filter:drop-shadow(0 1px 1.5px #000a)}
+.wind svg{width:26px;height:26px}
+.wind span{font:700 11px/1 var(--body);color:#fff;text-shadow:0 0 3px #000,0 0 2px #000;font-variant-numeric:tabular-nums}
 .maperr{position:absolute;inset:auto 8px 86px 8px;z-index:500;background:var(--surface);border-radius:10px;padding:8px 10px;font-size:.85rem}
 
 main{padding:16px 16px calc(env(safe-area-inset-bottom,0px) + 24px);display:flex;flex-direction:column;gap:14px;max-width:760px;width:100%;margin:0 auto}
@@ -146,7 +153,10 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
     <button class="locate" id="locateBtn" title="Mi ubicación" aria-label="Ir a mi ubicación">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
     </button>
-    <div class="legend" aria-hidden="true"><span>Intensidad de lluvia</span><span class="ramp"></span><span class="lbl"><span>débil</span><span>fuerte</span></span></div>
+    <button class="windbtn" id="windBtn" aria-pressed="false" title="Mostrar viento">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 8h11a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h8"/></svg>Viento
+    </button>
+    <div class="legend" aria-hidden="true"><span>Intensidad de lluvia</span><span class="ramp"></span><span class="lbl"><span>débil</span><span>fuerte</span></span><span>Flechas: viento en km/h</span></div>
     <div class="radarbar">
       <button class="play" id="playBtn" aria-label="Reproducir radar"><svg viewBox="0 0 16 16" id="playIcon"><path d="M3 1.5v13l11-6.5z"/></svg></button>
       <div class="slider">
@@ -339,6 +349,49 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
   $('playBtn').onclick = () => play(!timer);
   $('frame').oninput = e => { play(false); showFrame(+e.target.value); };
 
+
+  // ---------- viento (Open-Meteo, varias ubicaciones en una sola petición) ----------
+  const windLayer = L.layerGroup();
+  let windOn = false, windTimer = null, windReq = 0;
+  try { windOn = localStorage.getItem(STORE + ':wind') === '1'; } catch (e) {}
+  const windColor = k => k < 15 ? '#7fd17f' : k < 30 ? '#f4d03f' : k < 50 ? '#f39c33' : k < 75 ? '#e8590c' : '#c2185b';
+  async function loadWind() {
+    if (!windOn) return;
+    const b = map.getBounds(), cols = 5, rows = 6;
+    const lats = [], lons = [];
+    const n = b.getNorth(), so = b.getSouth(), w = b.getWest(), e = b.getEast();
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      lats.push((so + (n - so) * (r + 0.5) / rows).toFixed(3));
+      lons.push((((w + (e - w) * (c + 0.5) / cols) + 540) % 360 - 180).toFixed(3));
+    }
+    const my = ++windReq;
+    try {
+      const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lats.join(',')}&longitude=${lons.join(',')}&current=wind_speed_10m,wind_direction_10m,wind_gusts_10m&timezone=auto`);
+      if (!r.ok) throw new Error(r.status);
+      let d = await r.json(); if (!Array.isArray(d)) d = [d];
+      if (my !== windReq || !windOn) return;
+      windLayer.clearLayers();
+      d.forEach((x, i) => {
+        const c = x.current; if (!c) return;
+        const k = Math.round(c.wind_speed_10m), to = (c.wind_direction_10m + 180) % 360;
+        const html = `<div class="wind" title="${k} km/h ${dir(c.wind_direction_10m)}, rachas ${Math.round(c.wind_gusts_10m)} km/h">` +
+          `<svg viewBox="0 0 24 24" style="transform:rotate(${to}deg)"><path d="M12 2 L18 14 L13.5 12 L13.5 22 L10.5 22 L10.5 12 L6 14 Z" fill="${windColor(k)}" stroke="#0008" stroke-width=".8"/></svg><span>${k}</span></div>`;
+        L.marker([+lats[i], +lons[i]], { icon: L.divIcon({ className: '', html, iconSize: [30, 40], iconAnchor: [15, 20] }), interactive: false, keyboard: false }).addTo(windLayer);
+      });
+    } catch (err) {
+      $('mapErr').hidden = false; $('mapErr').textContent = 'No se ha podido cargar el viento. Se reintenta al mover el mapa.';
+    }
+  }
+  function setWind(on) {
+    windOn = on;
+    try { localStorage.setItem(STORE + ':wind', on ? '1' : '0'); } catch (e) {}
+    $('windBtn').setAttribute('aria-pressed', on ? 'true' : 'false');
+    if (on) { windLayer.addTo(map); loadWind(); } else { windLayer.clearLayers(); map.removeLayer(windLayer); }
+  }
+  $('windBtn').onclick = () => setWind(!windOn);
+  map.on('moveend', () => { clearTimeout(windTimer); windTimer = setTimeout(loadWind, 400); });
+  setInterval(loadWind, 15 * 60e3);
+
   // ---------- previsión (Open-Meteo) ----------
   let lastKey = '', lastFetch = 0;
   async function loadForecast(p) {
@@ -496,6 +549,7 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
   renderChips();
   if (state.selected !== 'me') refresh(true);
   locate(state.selected === 'me');
+  if (windOn) setWind(true);
   loadRadar();
   setInterval(loadRadar, 5 * 60e3);
   setInterval(() => { const p = current(); if (p) { lastKey = ''; loadForecast(p); } }, 10 * 60e3);

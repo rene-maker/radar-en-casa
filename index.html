@@ -74,6 +74,7 @@ button,input{font:inherit;color:inherit}
   background:color-mix(in srgb,var(--surface) 92%,transparent);color:var(--fg);display:grid;place-items:center;box-shadow:0 1px 6px #0002}
 .locate svg{width:20px;height:20px}
 .leaflet-control-attribution{font-size:10px}
+@media (prefers-color-scheme: dark){.basemap{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9)}}
 .maperr{position:absolute;inset:auto 8px 86px 8px;z-index:500;background:var(--surface);border-radius:10px;padding:8px 10px;font-size:.85rem}
 
 main{padding:16px 16px calc(env(safe-area-inset-bottom,0px) + 24px);display:flex;flex-direction:column;gap:14px;max-width:760px;width:100%;margin:0 auto}
@@ -275,10 +276,9 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
 
   // ---------- mapa ----------
   const map = L.map('map', { zoomControl: false, attributionControl: true, minZoom: 3, maxZoom: 12 }).setView([FALLBACK.lat, FALLBACK.lon], 7);
-  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/' + (dark ? 'dark_all' : 'rastertiles/voyager') + '/{z}/{x}/{y}{r}.png', {
-    subdomains: 'abcd', maxZoom: 19,
-    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · © <a href="https://carto.com/attributions">CARTO</a> · <a href="https://www.rainviewer.com/">RainViewer</a>'
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, className: 'basemap',
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · <a href="https://www.rainviewer.com/">RainViewer</a>'
   }).addTo(map);
   map.attributionControl.setPrefix(false);
   const pinIcon = L.divIcon({ className: '', html: '<div class="loc-pin"></div>', iconSize: [16, 16], iconAnchor: [8, 8] });

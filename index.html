@@ -82,6 +82,11 @@ button,input{font:inherit;color:inherit}
 .wind{display:flex;flex-direction:column;align-items:center;gap:0;pointer-events:none;filter:drop-shadow(0 1px 1.5px #000a)}
 .wind svg{width:26px;height:26px}
 .wind span{font:700 11px/1 var(--body);color:#fff;text-shadow:0 0 3px #000,0 0 2px #000;font-variant-numeric:tabular-nums}
+.windcanvas{position:absolute;inset:0;width:100%;height:100%;z-index:450;pointer-events:none}
+.windlbl{width:30px;height:30px;display:grid;place-items:center;pointer-events:none}
+.windlbl{font:700 11px/1 var(--body);color:#fff;font-variant-numeric:tabular-nums}
+.windlbl::before{content:"";position:absolute;width:24px;height:18px;border-radius:9px;background:#0009;border:1.5px solid var(--c);z-index:-1}
+.windlbl{position:relative;isolation:isolate}
 .maperr{position:absolute;inset:auto 8px 86px 8px;z-index:500;background:var(--surface);border-radius:10px;padding:8px 10px;font-size:.85rem}
 
 main{padding:16px 16px calc(env(safe-area-inset-bottom,0px) + 24px);display:flex;flex-direction:column;gap:14px;max-width:760px;width:100%;margin:0 auto}
@@ -156,7 +161,7 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
     <button class="windbtn" id="windBtn" aria-pressed="false" title="Mostrar viento">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 8h11a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h8"/></svg>Viento
     </button>
-    <div class="legend" aria-hidden="true"><span>Intensidad de lluvia</span><span class="ramp"></span><span class="lbl"><span>débil</span><span>fuerte</span></span><span>Flechas: viento en km/h</span></div>
+    <div class="legend" aria-hidden="true"><span>Intensidad de lluvia</span><span class="ramp"></span><span class="lbl"><span>débil</span><span>fuerte</span></span><span>Viento: números en km/h</span></div>
     <div class="radarbar">
       <button class="play" id="playBtn" aria-label="Reproducir radar"><svg viewBox="0 0 16 16" id="playIcon"><path d="M3 1.5v13l11-6.5z"/></svg></button>
       <div class="slider">
@@ -352,19 +357,22 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
 
 
   // ---------- viento (Open-Meteo, varias ubicaciones en una sola petición) ----------
+  // Se pide una rejilla de puntos sobre la zona visible; las partículas se mueven interpolando entre ellos.
   const windLayer = L.layerGroup();
   let windOn = false, windTimer = null, windReq = 0;
   try { windOn = localStorage.getItem(STORE + ':wind') === '1'; } catch (e) {}
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const windColor = k => k < 15 ? '#7fd17f' : k < 30 ? '#f4d03f' : k < 50 ? '#f39c33' : k < 75 ? '#e8590c' : '#c2185b';
-  let windData = null;
+  const GC = 8, GR = 10;
+  let windData = null, windBox = null, windT = Date.now() / 1000;
   async function loadWind() {
     if (!windOn) return;
-    const b = map.getBounds(), cols = 5, rows = 6;
+    const b = map.getBounds();
+    const box = { n: b.getNorth(), s: b.getSouth(), w: b.getWest(), e: b.getEast() };
     const lats = [], lons = [];
-    const n = b.getNorth(), so = b.getSouth(), w = b.getWest(), e = b.getEast();
-    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-      lats.push((so + (n - so) * (r + 0.5) / rows).toFixed(3));
-      lons.push((((w + (e - w) * (c + 0.5) / cols) + 540) % 360 - 180).toFixed(3));
+    for (let r = 0; r < GR; r++) for (let c = 0; c < GC; c++) {
+      lats.push((box.s + (box.n - box.s) * (r + 0.5) / GR).toFixed(3));
+      lons.push((((box.w + (box.e - box.w) * (c + 0.5) / GC) + 540) % 360 - 180).toFixed(3));
     }
     const my = ++windReq;
     // Serie cada 15 min: 2,5 h hacia atrás y 1 h hacia delante, para seguir los fotogramas del radar.
@@ -374,34 +382,125 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
       if (r.status === 400) r = await fetch(base + 'wind_speed_10m,wind_direction_10m');
       if (!r.ok) throw new Error(r.status);
       let d = await r.json(); if (!Array.isArray(d)) d = [d];
-      if (my !== windReq || !windOn) return;
-      windData = d.map((x, i) => ({ lat: +lats[i], lon: +lons[i], m: x.minutely_15 })).filter(x => x.m && x.m.time);
+      if (my !== windReq || !windOn || d.length !== GC * GR) return;
+      windData = d.map((x, i) => ({ lat: +lats[i], lon: +lons[i], m: x.minutely_15 }));
+      windBox = box;
       drawWind(frames[idx] ? frames[idx].time : Date.now() / 1000);
     } catch (err) {
       $('mapErr').hidden = false; $('mapErr').textContent = 'No se ha podido cargar el viento. Se reintenta al mover el mapa.';
     }
   }
-  function drawWind(t) {
-    if (!windOn || !windData) return;
-    windLayer.clearLayers();
-    windData.forEach(p => {
-      const ts = p.m.time;
-      let j = 0, best = Infinity;
-      for (let k = 0; k < ts.length; k++) { const dd = Math.abs(ts[k] - t); if (dd < best) { best = dd; j = k; } }
-      const sp = p.m.wind_speed_10m[j], dg = p.m.wind_direction_10m[j];
-      if (sp == null || dg == null) return;
-      const k = Math.round(sp), to = (dg + 180) % 360;
-      const g = p.m.wind_gusts_10m ? p.m.wind_gusts_10m[j] : null;
-      const html = `<div class="wind" title="${k} km/h ${dir(dg)}${g != null ? ', rachas ' + Math.round(g) + ' km/h' : ''}">` +
-        `<svg viewBox="0 0 24 24" style="transform:rotate(${to}deg)"><path d="M12 2 L18 14 L13.5 12 L13.5 22 L10.5 22 L10.5 12 L6 14 Z" fill="${windColor(k)}" stroke="#0008" stroke-width=".8"/></svg><span>${k}</span></div>`;
-      L.marker([p.lat, p.lon], { icon: L.divIcon({ className: '', html, iconSize: [30, 40], iconAnchor: [15, 20] }), interactive: false, keyboard: false }).addTo(windLayer);
-    });
+  function sampleAt(p, t) {
+    const m = p.m; if (!m || !m.time) return null;
+    let j = 0, best = Infinity;
+    for (let k = 0; k < m.time.length; k++) { const dd = Math.abs(m.time[k] - t); if (dd < best) { best = dd; j = k; } }
+    const sp = m.wind_speed_10m[j], dg = m.wind_direction_10m[j];
+    if (sp == null || dg == null) return null;
+    const rad = dg * Math.PI / 180;
+    // dg = de dónde viene; el aire va hacia el lado contrario. u = hacia el este, v = hacia el norte.
+    return { sp, dg, g: m.wind_gusts_10m ? m.wind_gusts_10m[j] : null, u: -Math.sin(rad) * sp, v: -Math.cos(rad) * sp };
   }
+  let windNow = []; // muestras del momento actual, en el orden de la rejilla
+  function drawWind(t) {
+    windT = t;
+    if (!windOn || !windData) return;
+    windNow = windData.map(p => sampleAt(p, t));
+    windLayer.clearLayers();
+    windData.forEach((p, i) => {
+      const r = Math.floor(i / GC), c = i % GC;
+      if (!reduceMotion && (r % 2 === 0 || c % 2 === 0)) return; // con partículas, solo algunas etiquetas
+      const x = windNow[i]; if (!x) return;
+      const k = Math.round(x.sp);
+      const title = `${k} km/h ${dir(x.dg)}${x.g != null ? ', rachas ' + Math.round(x.g) + ' km/h' : ''}`;
+      const html = reduceMotion
+        ? `<div class="wind" title="${title}"><svg viewBox="0 0 24 24" style="transform:rotate(${(x.dg + 180) % 360}deg)"><path d="M12 2 L18 14 L13.5 12 L13.5 22 L10.5 22 L10.5 12 L6 14 Z" fill="${windColor(k)}" stroke="#0008" stroke-width=".8"/></svg><span>${k}</span></div>`
+        : `<div class="windlbl" title="${title}" style="--c:${windColor(k)}">${k}</div>`;
+      L.marker([p.lat, p.lon], { icon: L.divIcon({ className: '', html, iconSize: [30, 30], iconAnchor: [15, 15] }), interactive: false, keyboard: false }).addTo(windLayer);
+    });
+    buildField();
+  }
+
+  // ---------- partículas ----------
+  const cv = document.createElement('canvas'); cv.className = 'windcanvas'; cv.setAttribute('aria-hidden', 'true');
+  document.querySelector('.mapwrap').insertBefore(cv, $('locateBtn'));
+  const ctx = cv.getContext('2d');
+  const CELL = 16;
+  let field = null, fw = 0, fh = 0, parts = [], raf = 0, moving = false, W = 0, H = 0, dpr = 1;
+  function sizeCanvas() {
+    const r = cv.parentElement.getBoundingClientRect();
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    W = r.width; H = r.height;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function windAtLatLng(lat, lon) {
+    const bx = windBox;
+    let fc = (lon - bx.w) / (bx.e - bx.w) * GC - 0.5, fr = (lat - bx.s) / (bx.n - bx.s) * GR - 0.5;
+    fc = Math.max(0, Math.min(GC - 1.001, fc)); fr = Math.max(0, Math.min(GR - 1.001, fr));
+    const c0 = Math.floor(fc), r0 = Math.floor(fr), tx = fc - c0, ty = fr - r0;
+    const g = (r, c) => windNow[r * GC + c];
+    const a = g(r0, c0), b = g(r0, c0 + 1), c = g(r0 + 1, c0), d = g(r0 + 1, c0 + 1);
+    if (!a || !b || !c || !d) return null;
+    const mix = k => (a[k] * (1 - tx) + b[k] * tx) * (1 - ty) + (c[k] * (1 - tx) + d[k] * tx) * ty;
+    return [mix('u'), mix('v')];
+  }
+  function buildField() {
+    if (reduceMotion || !windData || !windBox) { field = null; return; }
+    sizeCanvas();
+    fw = Math.ceil(W / CELL) + 1; fh = Math.ceil(H / CELL) + 1;
+    field = new Float32Array(fw * fh * 2);
+    for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) {
+      const ll = map.containerPointToLatLng([x * CELL, y * CELL]);
+      const uv = windAtLatLng(ll.lat, ll.lng) || [0, 0];
+      field[(y * fw + x) * 2] = uv[0]; field[(y * fw + x) * 2 + 1] = uv[1];
+    }
+    const want = Math.round(Math.min(1400, W * H / 320));
+    while (parts.length < want) parts.push(newPart());
+    parts.length = want;
+    if (!raf) raf = requestAnimationFrame(step);
+  }
+  function newPart() { return { x: Math.random() * W, y: Math.random() * H, age: Math.random() * 80 | 0 }; }
+  function vel(x, y) {
+    const fx = x / CELL, fy = y / CELL, x0 = Math.floor(fx), y0 = Math.floor(fy);
+    if (x0 < 0 || y0 < 0 || x0 >= fw - 1 || y0 >= fh - 1) return null;
+    const tx = fx - x0, ty = fy - y0, i = (y0 * fw + x0) * 2, j = i + fw * 2;
+    const u = (field[i] * (1 - tx) + field[i + 2] * tx) * (1 - ty) + (field[j] * (1 - tx) + field[j + 2] * tx) * ty;
+    const v = (field[i + 1] * (1 - tx) + field[i + 3] * tx) * (1 - ty) + (field[j + 1] * (1 - tx) + field[j + 3] * tx) * ty;
+    return [u, v];
+  }
+  const SPEED = 0.045; // píxeles por fotograma por km/h
+  function step() {
+    raf = 0;
+    if (!windOn || !field) { ctx.clearRect(0, 0, W, H); return; }
+    raf = requestAnimationFrame(step);
+    if (moving || document.hidden) return;
+    // desvanecer las estelas
+    ctx.globalCompositeOperation = 'destination-in';
+    ctx.fillStyle = 'rgba(0,0,0,0.9)'; ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = 'source-over';
+    const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+    ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+    ctx.strokeStyle = dark ? 'rgba(235,245,250,0.7)' : 'rgba(20,45,70,0.6)';
+    ctx.beginPath();
+    for (const p of parts) {
+      const v = p.age++ < 90 ? vel(p.x, p.y) : null;
+      if (!v) { Object.assign(p, newPart(), { age: 0 }); continue; }
+      const nx = p.x + v[0] * SPEED, ny = p.y - v[1] * SPEED;
+      ctx.moveTo(p.x, p.y); ctx.lineTo(nx, ny);
+      p.x = nx; p.y = ny;
+    }
+    ctx.stroke();
+  }
+  map.on('movestart zoomstart', () => { moving = true; ctx.clearRect(0, 0, W, H); });
+  map.on('moveend', () => { moving = false; if (windOn && windData) buildField(); });
+  window.addEventListener('resize', () => { if (windOn && windData) buildField(); });
+
   function setWind(on) {
     windOn = on;
     try { localStorage.setItem(STORE + ':wind', on ? '1' : '0'); } catch (e) {}
     $('windBtn').setAttribute('aria-pressed', on ? 'true' : 'false');
-    if (on) { windLayer.addTo(map); loadWind(); } else { windData = null; windLayer.clearLayers(); map.removeLayer(windLayer); }
+    if (on) { windLayer.addTo(map); loadWind(); }
+    else { windData = null; field = null; windLayer.clearLayers(); map.removeLayer(windLayer); ctx.clearRect(0, 0, W, H); }
   }
   $('windBtn').onclick = () => setWind(!windOn);
   map.on('moveend', () => { clearTimeout(windTimer); windTimer = setTimeout(loadWind, 400); });

@@ -337,6 +337,7 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
     // precarga del siguiente
     layerFor(frames[(idx + 1) % frames.length]);
     $('frame').value = idx;
+    drawWind(f.time);
     const t = new Date(f.time * 1000);
     $('tNow').textContent = hhmm(t) + (f.kind === 'now' ? ' · ahora' : f.kind === 'cast' ? ' · previsión' : '');
   }
@@ -355,6 +356,7 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
   let windOn = false, windTimer = null, windReq = 0;
   try { windOn = localStorage.getItem(STORE + ':wind') === '1'; } catch (e) {}
   const windColor = k => k < 15 ? '#7fd17f' : k < 30 ? '#f4d03f' : k < 50 ? '#f39c33' : k < 75 ? '#e8590c' : '#c2185b';
+  let windData = null;
   async function loadWind() {
     if (!windOn) return;
     const b = map.getBounds(), cols = 5, rows = 6;
@@ -365,28 +367,41 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
       lons.push((((w + (e - w) * (c + 0.5) / cols) + 540) % 360 - 180).toFixed(3));
     }
     const my = ++windReq;
+    // Serie cada 15 min: 2,5 h hacia atrás y 1 h hacia delante, para seguir los fotogramas del radar.
+    const base = `https://api.open-meteo.com/v1/forecast?latitude=${lats.join(',')}&longitude=${lons.join(',')}&timeformat=unixtime&past_minutely_15=10&forecast_minutely_15=5&minutely_15=`;
     try {
-      const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lats.join(',')}&longitude=${lons.join(',')}&current=wind_speed_10m,wind_direction_10m,wind_gusts_10m&timezone=auto`);
+      let r = await fetch(base + 'wind_speed_10m,wind_direction_10m,wind_gusts_10m');
+      if (r.status === 400) r = await fetch(base + 'wind_speed_10m,wind_direction_10m');
       if (!r.ok) throw new Error(r.status);
       let d = await r.json(); if (!Array.isArray(d)) d = [d];
       if (my !== windReq || !windOn) return;
-      windLayer.clearLayers();
-      d.forEach((x, i) => {
-        const c = x.current; if (!c) return;
-        const k = Math.round(c.wind_speed_10m), to = (c.wind_direction_10m + 180) % 360;
-        const html = `<div class="wind" title="${k} km/h ${dir(c.wind_direction_10m)}, rachas ${Math.round(c.wind_gusts_10m)} km/h">` +
-          `<svg viewBox="0 0 24 24" style="transform:rotate(${to}deg)"><path d="M12 2 L18 14 L13.5 12 L13.5 22 L10.5 22 L10.5 12 L6 14 Z" fill="${windColor(k)}" stroke="#0008" stroke-width=".8"/></svg><span>${k}</span></div>`;
-        L.marker([+lats[i], +lons[i]], { icon: L.divIcon({ className: '', html, iconSize: [30, 40], iconAnchor: [15, 20] }), interactive: false, keyboard: false }).addTo(windLayer);
-      });
+      windData = d.map((x, i) => ({ lat: +lats[i], lon: +lons[i], m: x.minutely_15 })).filter(x => x.m && x.m.time);
+      drawWind(frames[idx] ? frames[idx].time : Date.now() / 1000);
     } catch (err) {
       $('mapErr').hidden = false; $('mapErr').textContent = 'No se ha podido cargar el viento. Se reintenta al mover el mapa.';
     }
+  }
+  function drawWind(t) {
+    if (!windOn || !windData) return;
+    windLayer.clearLayers();
+    windData.forEach(p => {
+      const ts = p.m.time;
+      let j = 0, best = Infinity;
+      for (let k = 0; k < ts.length; k++) { const dd = Math.abs(ts[k] - t); if (dd < best) { best = dd; j = k; } }
+      const sp = p.m.wind_speed_10m[j], dg = p.m.wind_direction_10m[j];
+      if (sp == null || dg == null) return;
+      const k = Math.round(sp), to = (dg + 180) % 360;
+      const g = p.m.wind_gusts_10m ? p.m.wind_gusts_10m[j] : null;
+      const html = `<div class="wind" title="${k} km/h ${dir(dg)}${g != null ? ', rachas ' + Math.round(g) + ' km/h' : ''}">` +
+        `<svg viewBox="0 0 24 24" style="transform:rotate(${to}deg)"><path d="M12 2 L18 14 L13.5 12 L13.5 22 L10.5 22 L10.5 12 L6 14 Z" fill="${windColor(k)}" stroke="#0008" stroke-width=".8"/></svg><span>${k}</span></div>`;
+      L.marker([p.lat, p.lon], { icon: L.divIcon({ className: '', html, iconSize: [30, 40], iconAnchor: [15, 20] }), interactive: false, keyboard: false }).addTo(windLayer);
+    });
   }
   function setWind(on) {
     windOn = on;
     try { localStorage.setItem(STORE + ':wind', on ? '1' : '0'); } catch (e) {}
     $('windBtn').setAttribute('aria-pressed', on ? 'true' : 'false');
-    if (on) { windLayer.addTo(map); loadWind(); } else { windLayer.clearLayers(); map.removeLayer(windLayer); }
+    if (on) { windLayer.addTo(map); loadWind(); } else { windData = null; windLayer.clearLayers(); map.removeLayer(windLayer); }
   }
   $('windBtn').onclick = () => setWind(!windOn);
   map.on('moveend', () => { clearTimeout(windTimer); windTimer = setTimeout(loadWind, 400); });

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Radar en Casa</string>
+    <string name="widget_name">Radar en Casa: tiempo actual</string>
+    <string name="widget_desc">Lugar, temperatura y viento</string>
+</resources>

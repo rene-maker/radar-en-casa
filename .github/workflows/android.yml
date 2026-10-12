@@ -1,0 +1,35 @@
+name: App Android
+
+on:
+  push:
+    branches: [main]
+    paths: ['android/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Compilar APK
+        working-directory: android
+        run: gradle assembleRelease --no-daemon
+      - name: Publicar en Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk radar-en-casa.apk
+          gh release delete app --yes --cleanup-tag || true
+          gh release create app radar-en-casa.apk \
+            --title "Radar en Casa para Android" \
+            --notes "Versión ${{ github.run_number }}. Descarga radar-en-casa.apk en el móvil e instálalo."

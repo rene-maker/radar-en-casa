@@ -1,0 +1,39 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.renewisse.radarencasa'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.renewisse.radarencasa'
+        minSdk 24
+        targetSdk 34
+        // Cada compilación en GitHub sube el número de versión, para que se pueda instalar encima.
+        versionCode((System.getenv('GITHUB_RUN_NUMBER') ?: '1') as int)
+        versionName '1.0.' + (System.getenv('GITHUB_RUN_NUMBER') ?: '0')
+    }
+
+    // Clave de firma fija: así cada nueva versión se instala encima de la anterior.
+    signingConfigs {
+        release {
+            storeFile file('radar.jks')
+            storePassword 'radarencasa'
+            keyAlias 'radar'
+            keyPassword 'radarencasa'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

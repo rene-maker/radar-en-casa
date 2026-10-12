@@ -75,7 +75,9 @@ button,input{font:inherit;color:inherit}
   background:color-mix(in srgb,var(--surface) 92%,transparent);color:var(--fg);display:grid;place-items:center;box-shadow:0 1px 6px #0002}
 .locate svg{width:20px;height:20px}
 .leaflet-control-attribution{font-size:10px}
-@media (prefers-color-scheme: dark){.basemap{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9)}}
+.basemap-inv{filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9)}
+.mapstyle{position:absolute;top:100px;left:8px;z-index:500;height:38px;border-radius:10px;border:0;padding:0 10px;cursor:pointer;
+  background:color-mix(in srgb,var(--surface) 92%,transparent);color:var(--fg);box-shadow:0 1px 6px #0002;font-size:.85rem;font-weight:700;max-width:9.5rem}
 .windbtn{position:absolute;top:54px;left:8px;z-index:500;height:38px;padding:0 12px;border-radius:10px;border:0;cursor:pointer;
   background:color-mix(in srgb,var(--surface) 92%,transparent);color:var(--fg);display:flex;align-items:center;gap:6px;box-shadow:0 1px 6px #0002;font-size:.85rem;font-weight:700}
 .windbtn svg{width:18px;height:18px}
@@ -192,6 +194,13 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
       <button class="locate" id="locateBtn" title="Mi ubicación" aria-label="Ir a mi ubicación">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
       </button>
+      <select class="mapstyle" id="mapStyle" aria-label="Tipo de mapa">
+        <option value="claro">Mapa claro</option>
+        <option value="calles">Calles</option>
+        <option value="relieve">Relieve</option>
+        <option value="satelite">Satélite</option>
+        <option value="oscuro">Oscuro</option>
+      </select>
       <button class="windbtn" id="windBtn" aria-pressed="false" title="Mostrar viento">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 8h11a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h8"/></svg>Viento
       </button>
@@ -211,7 +220,7 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
       <div class="days" id="days"></div>
     </section>
 
-    <p class="foot">Previsión: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> · Radar: <a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a> · Mapa: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a><br>Tus lugares se guardan solo en este móvil.<br>Hecho por René Wisse · Uso personal, no comercial.</p>
+    <p class="foot">Previsión: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> · Radar: <a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a> · Mapas: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>, Esri, OpenTopoMap<br>Tus lugares se guardan solo en este móvil.<br>Hecho por René Wisse · Uso personal, no comercial.</p>
   </main>
 </div>
 
@@ -302,10 +311,32 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
 
   // ---------- mapa ----------
   const map = L.map('map', { zoomControl: false, attributionControl: true, minZoom: 3, maxZoom: 12 }).setView([FALLBACK.lat, FALLBACK.lon], 7);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19, className: 'basemap',
-    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · <a href="https://www.rainviewer.com/">RainViewer</a>'
-  }).addTo(map);
+  // Mapas de fondo gratuitos y sin clave. Cada móvil recuerda el suyo.
+  const OSM = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+  const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
+  const RV = ' · <a href="https://www.rainviewer.com/">RainViewer</a>';
+  const STYLES = {
+    claro:    { light: true, layers: [[ESRI + 'Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 16 }], [ESRI + 'Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 16 }]], attr: 'Mapa © Esri, HERE, Garmin, ' + OSM },
+    calles:   { light: true, layers: [['https://tile.openstreetmap.org/{z}/{x}/{y}.png', {}]], attr: OSM },
+    relieve:  { light: true, layers: [['https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxNativeZoom: 17, subdomains: 'abc' }]], attr: OSM + ' · <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)' },
+    satelite: { light: false, layers: [[ESRI + 'World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 18 }], [ESRI + 'Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 18 }]], attr: 'Imágenes © Esri, Maxar, Earthstar Geographics' },
+    oscuro:   { light: false, layers: [['https://tile.openstreetmap.org/{z}/{x}/{y}.png', { className: 'basemap-inv' }]], attr: OSM }
+  };
+  let baseLayers = [], mapStyle = 'claro';
+  try { const m = localStorage.getItem(STORE + ':map'); if (STYLES[m]) mapStyle = m; } catch (e) {}
+  function setMapStyle(k) {
+    mapStyle = STYLES[k] ? k : 'claro';
+    try { localStorage.setItem(STORE + ':map', mapStyle); } catch (e) {}
+    baseLayers.forEach(l => map.removeLayer(l));
+    const st = STYLES[mapStyle];
+    baseLayers = st.layers.map(([url, o]) => L.tileLayer(url, { maxZoom: 19, zIndex: 1, attribution: '', ...o }).addTo(map));
+    baseLayers[0].options.attribution = st.attr + RV;
+    map.attributionControl._attributions = {};
+    map.attributionControl.addAttribution(st.attr + RV);
+    $('mapStyle').value = mapStyle;
+  }
+  setMapStyle(mapStyle);
+  $('mapStyle').onchange = e => setMapStyle(e.target.value);
   map.attributionControl.setPrefix(false);
   const pinIcon = L.divIcon({ className: '', html: '<div class="loc-pin"></div>', iconSize: [16, 16], iconAnchor: [8, 8] });
   let pin = null;
@@ -489,7 +520,7 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
     ctx.globalCompositeOperation = 'destination-in';
     ctx.fillStyle = 'rgba(0,0,0,0.9)'; ctx.fillRect(0, 0, W, H);
     ctx.globalCompositeOperation = 'source-over';
-    const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+    const dark = !STYLES[mapStyle].light;
     ctx.lineWidth = 1.4; ctx.lineCap = 'round';
     ctx.strokeStyle = dark ? 'rgba(235,245,250,0.7)' : 'rgba(20,45,70,0.6)';
     ctx.beginPath();

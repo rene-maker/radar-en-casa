@@ -85,6 +85,8 @@ button,input{font:inherit;color:inherit}
 .wind{display:flex;flex-direction:column;align-items:center;gap:0;pointer-events:none;filter:drop-shadow(0 1px 1.5px #000a)}
 .wind svg{width:26px;height:26px}
 .wind span{font:700 11px/1 var(--body);color:#fff;text-shadow:0 0 3px #000,0 0 2px #000;font-variant-numeric:tabular-nums}
+.raincanvas{position:absolute;inset:0;width:100%;height:100%;z-index:420;pointer-events:none}
+.slider input.future{accent-color:var(--warm)}
 .windcanvas{position:absolute;inset:0;width:100%;height:100%;z-index:450;pointer-events:none}
 .windlbl{width:30px;height:30px;display:grid;place-items:center;pointer-events:none}
 .windlbl{font:700 11px/1 var(--body);color:#fff;font-variant-numeric:tabular-nums}
@@ -211,7 +213,7 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
       <button class="windbtn" id="windBtn" aria-pressed="false" title="Mostrar viento">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 8h11a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h8"/></svg>Viento
       </button>
-      <div class="legend" aria-hidden="true"><span>Intensidad de lluvia</span><span class="ramp"></span><span class="lbl"><span>débil</span><span>fuerte</span></span><span>Viento: números en km/h</span></div>
+      <div class="legend" aria-hidden="true"><span>Intensidad de lluvia</span><span class="ramp"></span><span class="lbl"><span>débil</span><span>fuerte</span></span><span>Viento: números en km/h</span><span>Después de «ahora»: previsión</span></div>
       <div class="radarbar">
         <button class="play" id="playBtn" aria-label="Reproducir radar"><svg viewBox="0 0 16 16" id="playIcon"><path d="M3 1.5v13l11-6.5z"/></svg></button>
         <div class="slider">
@@ -362,7 +364,7 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
   let pin = null;
 
   // ---------- radar (RainViewer) ----------
-  let frames = [], layers = {}, idx = 0, timer = null, host = '';
+  let frames = [], radarFrames = [], layers = {}, idx = 0, timer = null, host = '';
   const nowIndex = () => Math.max(0, frames.findIndex(f => f.kind === 'now'));
   async function loadRadar() {
     try {
@@ -374,18 +376,32 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
       if (past.length) past[past.length - 1].kind = 'now';
       const keep = new Set(frames.map(f => f.path));
       Object.keys(layers).forEach(p => { if (![...past, ...cast].some(f => f.path === p)) { map.removeLayer(layers[p]); delete layers[p]; } });
-      frames = [...past, ...cast];
-      if (!frames.length) throw new Error('sin datos');
-      $('frame').max = frames.length - 1;
-      $('tEnd').textContent = cast.length ? '+' + Math.round((cast[cast.length - 1].time - past[past.length - 1].time) / 60) + ' min' : 'ahora';
+      radarFrames = [...past, ...cast];
+      if (!radarFrames.length) throw new Error('sin datos');
       const span = Math.round((past[past.length - 1].time - past[0].time) / 3600 * 10) / 10;
       $('tStart').textContent = '-' + fmt1(span) + ' h';
       $('mapErr').hidden = true;
-      showFrame(keep.size ? Math.min(idx, frames.length - 1) : nowIndex());
+      rebuildFrames(!keep.size);
     } catch (e) {
       $('tNow').textContent = 'Radar no disponible';
       $('mapErr').hidden = false; $('mapErr').textContent = 'No se ha podido cargar el radar. Comprueba la conexión; se reintenta solo cada 5 minutos.';
     }
+  }
+  // Fotogramas: radar real (pasado) + previsión del modelo de Open-Meteo hasta 4 h después del último radar.
+  const FUTURE_H = 4;
+  function rebuildFrames(goNow) {
+    const cur = frames[idx];
+    const last = radarFrames.length ? radarFrames[radarFrames.length - 1].time : Date.now() / 1000;
+    const times = gridData && gridData[0] && gridData[0].m ? gridData[0].m.time : [];
+    const model = times.filter(t => t > last + 300 && t <= last + FUTURE_H * 3600).map(t => ({ time: t, kind: 'model', path: 'model:' + t }));
+    frames = [...radarFrames, ...model];
+    if (!frames.length) return;
+    $('frame').max = frames.length - 1;
+    const end = frames[frames.length - 1].time - last;
+    $('tEnd').textContent = end > 600 ? '+' + fmt1(Math.round(end / 1800) / 2) + ' h' : 'ahora';
+    let i = cur ? frames.findIndex(f => f.path === cur.path) : -1;
+    if (goNow || i < 0) i = nowIndex();
+    showFrame(i);
   }
   function layerFor(f) {
     if (!layers[f.path]) {
@@ -400,13 +416,16 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
     idx = (i + frames.length) % frames.length;
     const f = frames[idx];
     Object.entries(layers).forEach(([p, l]) => l.setOpacity(p === f.path ? 0.75 : 0));
-    layerFor(f).setOpacity(0.75);
+    if (f.kind === 'model') drawRain(f.time);
+    else { clearRain(); layerFor(f).setOpacity(0.75); }
     // precarga del siguiente
-    layerFor(frames[(idx + 1) % frames.length]);
+    const nx = frames[(idx + 1) % frames.length];
+    if (nx.kind !== 'model') layerFor(nx);
     $('frame').value = idx;
     drawWind(f.time);
     const t = new Date(f.time * 1000);
-    $('tNow').textContent = hhmm(t) + (f.kind === 'now' ? ' · ahora' : f.kind === 'cast' ? ' · previsión' : '');
+    $('tNow').textContent = hhmm(t) + (f.kind === 'now' ? ' · ahora' : f.kind === 'cast' || f.kind === 'model' ? ' · previsión' : '');
+    $('frame').classList.toggle('future', f.kind === 'model');
   }
   function play(on) {
     clearInterval(timer); timer = null;
@@ -427,8 +446,8 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
   const windColor = k => k < 15 ? '#7fd17f' : k < 30 ? '#f4d03f' : k < 50 ? '#f39c33' : k < 75 ? '#e8590c' : '#c2185b';
   const GC = 8, GR = 10;
   let windData = null, windBox = null, windT = Date.now() / 1000;
+  let gridData = null; // misma rejilla, con lluvia; se usa también sin viento para la previsión del mapa
   async function loadWind() {
-    if (!windOn) return;
     const b = map.getBounds();
     const box = { n: b.getNorth(), s: b.getSouth(), w: b.getWest(), e: b.getEast() };
     const lats = [], lons = [];
@@ -437,19 +456,21 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
       lons.push((((box.w + (box.e - box.w) * (c + 0.5) / GC) + 540) % 360 - 180).toFixed(3));
     }
     const my = ++windReq;
-    // Serie cada 15 min: 2,5 h hacia atrás y 1 h hacia delante, para seguir los fotogramas del radar.
-    const base = `https://api.open-meteo.com/v1/forecast?latitude=${lats.join(',')}&longitude=${lons.join(',')}&timeformat=unixtime&past_minutely_15=10&forecast_minutely_15=5&minutely_15=`;
+    // Serie cada 15 min: 2,5 h hacia atrás (para seguir el radar) y 4,25 h hacia delante (previsión en el mapa).
+    const base = `https://api.open-meteo.com/v1/forecast?latitude=${lats.join(',')}&longitude=${lons.join(',')}&timeformat=unixtime&past_minutely_15=10&forecast_minutely_15=17&minutely_15=precipitation,`;
     try {
       let r = await fetch(base + 'wind_speed_10m,wind_direction_10m,wind_gusts_10m');
       if (r.status === 400) r = await fetch(base + 'wind_speed_10m,wind_direction_10m');
       if (!r.ok) throw new Error(r.status);
       let d = await r.json(); if (!Array.isArray(d)) d = [d];
-      if (my !== windReq || !windOn || d.length !== GC * GR) return;
-      windData = d.map((x, i) => ({ lat: +lats[i], lon: +lons[i], m: x.minutely_15 }));
+      if (my !== windReq || d.length !== GC * GR) return;
+      gridData = d.map((x, i) => ({ lat: +lats[i], lon: +lons[i], m: x.minutely_15 }));
+      windData = windOn ? gridData : null;
       windBox = box;
+      rebuildFrames(false);
       drawWind(frames[idx] ? frames[idx].time : Date.now() / 1000);
     } catch (err) {
-      $('mapErr').hidden = false; $('mapErr').textContent = 'No se ha podido cargar el viento. Se reintenta al mover el mapa.';
+      $('mapErr').hidden = false; $('mapErr').textContent = 'No se ha podido cargar la previsión del mapa. Se reintenta al mover el mapa.';
     }
   }
   function sampleAt(p, t) {
@@ -480,6 +501,57 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
       L.marker([p.lat, p.lon], { icon: L.divIcon({ className: '', html, iconSize: [30, 30], iconAnchor: [15, 15] }), interactive: false, keyboard: false }).addTo(windLayer);
     });
     buildField();
+  }
+
+  // ---------- lluvia prevista (modelo) ----------
+  const rcv = document.createElement('canvas'); rcv.className = 'raincanvas'; rcv.setAttribute('aria-hidden', 'true');
+  document.querySelector('.mapwrap').insertBefore(rcv, $('locateBtn'));
+  const rctx = rcv.getContext('2d');
+  const off = document.createElement('canvas'), octx = off.getContext('2d');
+  // mm/h → color, parecido a la escala del radar
+  const RAMP = [[0.1, [159, 211, 255, 110]], [0.5, [58, 143, 232, 170]], [2, [20, 73, 184, 190]], [5, [244, 208, 63, 200]], [10, [232, 89, 12, 210]], [20, [194, 24, 91, 220]]];
+  function rainColor(v) {
+    if (v < RAMP[0][0]) return null;
+    for (let i = RAMP.length - 1; i >= 0; i--) if (v >= RAMP[i][0]) {
+      if (i === RAMP.length - 1) return RAMP[i][1];
+      const [a, ca] = RAMP[i], [b, cb] = RAMP[i + 1], t = Math.log(v / a) / Math.log(b / a);
+      return ca.map((x, k) => Math.round(x + (cb[k] - x) * t));
+    }
+    return null;
+  }
+  let rainT = null;
+  function clearRain() { rainT = null; rctx.clearRect(0, 0, rcv.width, rcv.height); }
+  function drawRain(t) {
+    rainT = t;
+    const box = cv.parentElement.getBoundingClientRect(), W2 = box.width, H2 = box.height, d2 = Math.min(2, devicePixelRatio || 1);
+    if (rcv.width !== Math.round(W2 * d2)) { rcv.width = Math.round(W2 * d2); rcv.height = Math.round(H2 * d2); }
+    rctx.clearRect(0, 0, rcv.width, rcv.height);
+    if (!gridData || !windBox || moving) return;
+    // valor en cada punto de la rejilla (mm en 15 min → mm/h)
+    const vals = gridData.map(p => {
+      const m = p.m; if (!m || !m.time || !m.precipitation) return 0;
+      let j = 0, best = Infinity;
+      for (let k = 0; k < m.time.length; k++) { const dd = Math.abs(m.time[k] - t); if (dd < best) { best = dd; j = k; } }
+      return (m.precipitation[j] || 0) * 4;
+    });
+    const C = 6, w = Math.ceil(W2 / C), h = Math.ceil(H2 / C);
+    off.width = w; off.height = h;
+    const img = octx.createImageData(w, h);
+    const bx = windBox;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const ll = map.containerPointToLatLng([x * C + C / 2, y * C + C / 2]);
+      let fc = (ll.lng - bx.w) / (bx.e - bx.w) * GC - 0.5, fr = (ll.lat - bx.s) / (bx.n - bx.s) * GR - 0.5;
+      fc = Math.max(0, Math.min(GC - 1.001, fc)); fr = Math.max(0, Math.min(GR - 1.001, fr));
+      const c0 = Math.floor(fc), r0 = Math.floor(fr), tx = fc - c0, ty = fr - r0;
+      const g = (r, c) => vals[r * GC + c];
+      const v = (g(r0, c0) * (1 - tx) + g(r0, c0 + 1) * tx) * (1 - ty) + (g(r0 + 1, c0) * (1 - tx) + g(r0 + 1, c0 + 1) * tx) * ty;
+      const col = rainColor(v); if (!col) continue;
+      const o = (y * w + x) * 4;
+      img.data[o] = col[0]; img.data[o + 1] = col[1]; img.data[o + 2] = col[2]; img.data[o + 3] = col[3];
+    }
+    octx.putImageData(img, 0, 0);
+    rctx.imageSmoothingEnabled = true;
+    rctx.drawImage(off, 0, 0, rcv.width, rcv.height);
   }
 
   // ---------- partículas ----------
@@ -553,16 +625,16 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
     }
     ctx.stroke();
   }
-  map.on('movestart zoomstart', () => { moving = true; ctx.clearRect(0, 0, W, H); });
-  map.on('moveend', () => { moving = false; if (windOn && windData) buildField(); });
+  map.on('movestart zoomstart', () => { moving = true; ctx.clearRect(0, 0, W, H); rctx.clearRect(0, 0, rcv.width, rcv.height); });
+  map.on('moveend', () => { moving = false; if (windOn && windData) buildField(); if (rainT) drawRain(rainT); });
   window.addEventListener('resize', () => { if (windOn && windData) buildField(); });
 
   function setWind(on) {
     windOn = on;
     try { localStorage.setItem(STORE + ':wind', on ? '1' : '0'); } catch (e) {}
     $('windBtn').setAttribute('aria-pressed', on ? 'true' : 'false');
-    if (on) { windLayer.addTo(map); loadWind(); }
-    else { windData = null; field = null; windLayer.clearLayers(); map.removeLayer(windLayer); ctx.clearRect(0, 0, W, H); }
+    if (on) { windLayer.addTo(map); if (gridData) { windData = gridData; drawWind(frames[idx] ? frames[idx].time : Date.now() / 1000); } else loadWind(); }
+    else { windData = null; field = null; windNow = []; windLayer.clearLayers(); map.removeLayer(windLayer); ctx.clearRect(0, 0, W, H); }
   }
   $('windBtn').onclick = () => setWind(!windOn);
   map.on('moveend', () => { clearTimeout(windTimer); windTimer = setTimeout(loadWind, 400); });
@@ -769,7 +841,7 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
   renderChips();
   if (state.selected !== 'me') refresh(true);
   locate(state.selected === 'me');
-  if (windOn) setWind(true);
+  if (windOn) setWind(true); else loadWind();
   loadRadar();
   setInterval(loadRadar, 5 * 60e3);
   setInterval(() => { const p = current(); if (p) { lastKey = ''; loadForecast(p); } }, 10 * 60e3);

@@ -53,7 +53,7 @@ button,input{font:inherit;color:inherit}
 .chip .x{opacity:.7;font-size:.85em;padding-left:2px}
 .chip.add{border-style:dashed;color:var(--muted)}
 
-.mapwrap{position:relative;height:52vh;min-height:300px;max-height:560px;margin:0 16px;border-radius:var(--r);overflow:hidden;
+.mapwrap{position:relative;height:52vh;min-height:300px;max-height:560px;margin:0;border-radius:var(--r);overflow:hidden;
   background:var(--surface-2);isolation:isolate}
 #map{position:absolute;inset:0}
 .leaflet-container{background:var(--surface-2);font-family:var(--body)}
@@ -169,25 +169,6 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
     <div class="chips" id="chips" role="toolbar" aria-label="Lugares"></div>
   </header>
 
-  <div class="mapwrap">
-    <div id="map" aria-label="Mapa del radar de lluvia"></div>
-    <button class="locate" id="locateBtn" title="Mi ubicación" aria-label="Ir a mi ubicación">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
-    </button>
-    <button class="windbtn" id="windBtn" aria-pressed="false" title="Mostrar viento">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 8h11a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h8"/></svg>Viento
-    </button>
-    <div class="legend" aria-hidden="true"><span>Intensidad de lluvia</span><span class="ramp"></span><span class="lbl"><span>débil</span><span>fuerte</span></span><span>Viento: números en km/h</span></div>
-    <div class="radarbar">
-      <button class="play" id="playBtn" aria-label="Reproducir radar"><svg viewBox="0 0 16 16" id="playIcon"><path d="M3 1.5v13l11-6.5z"/></svg></button>
-      <div class="slider">
-        <input type="range" id="frame" min="0" max="0" value="0" aria-label="Momento del radar">
-        <div class="t"><span id="tStart">-2 h</span><b id="tNow">Cargando radar…</b><span id="tEnd">ahora</span></div>
-      </div>
-    </div>
-    <div class="maperr" id="mapErr" hidden></div>
-  </div>
-
   <main>
     <section class="card now" id="nowCard" aria-live="polite">
       <div class="icon" id="nowIcon">⛅</div>
@@ -211,6 +192,25 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
       <div class="hours" id="hours"></div>
       <div class="hlegend" id="hoursLegend" hidden><span>Barra azul: lluvia en mm</span><span>%: probabilidad de lluvia</span><span>Flecha: viento en km/h, debajo las rachas</span></div>
     </section>
+
+    <div class="mapwrap">
+      <div id="map" aria-label="Mapa del radar de lluvia"></div>
+      <button class="locate" id="locateBtn" title="Mi ubicación" aria-label="Ir a mi ubicación">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+      </button>
+      <button class="windbtn" id="windBtn" aria-pressed="false" title="Mostrar viento">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 8h11a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h8"/></svg>Viento
+      </button>
+      <div class="legend" aria-hidden="true"><span>Intensidad de lluvia</span><span class="ramp"></span><span class="lbl"><span>débil</span><span>fuerte</span></span><span>Viento: números en km/h</span></div>
+      <div class="radarbar">
+        <button class="play" id="playBtn" aria-label="Reproducir radar"><svg viewBox="0 0 16 16" id="playIcon"><path d="M3 1.5v13l11-6.5z"/></svg></button>
+        <div class="slider">
+          <input type="range" id="frame" min="0" max="0" value="0" aria-label="Momento del radar">
+          <div class="t"><span id="tStart">-2 h</span><b id="tNow">Cargando radar…</b><span id="tEnd">ahora</span></div>
+        </div>
+      </div>
+      <div class="maperr" id="mapErr" hidden></div>
+    </div>
 
     <section class="card">
       <h2>Próximos 14 días <small>toca un día para verlo por horas</small></h2>

@@ -33,3 +33,12 @@ jobs:
           gh release create app radar-en-casa.apk \
             --title "Radar en Casa para Android" \
             --notes "Versión ${{ github.run_number }}. Descarga radar-en-casa.apk en el móvil e instálalo."
+      - name: Copiar el APK a la web (descarga directa desde GitHub Pages)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898299+github-actions[bot]@users.noreply.github.com"
+          git pull --ff-only origin main
+          cp radar-en-casa.apk ./radar-en-casa.apk.tmp && mv radar-en-casa.apk.tmp radar-en-casa.apk
+          git add -f radar-en-casa.apk
+          git commit -m "APK versión ${{ github.run_number }}" || exit 0
+          git push origin HEAD:main

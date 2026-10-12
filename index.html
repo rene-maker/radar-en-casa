@@ -34,7 +34,8 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
-body{background:var(--bg);color:var(--fg);font:16px/1.45 var(--body);-webkit-font-smoothing:antialiased}
+html{font-size:18px}
+body{background:var(--bg);color:var(--fg);font:1rem/1.45 var(--body);-webkit-font-smoothing:antialiased}
 button,input{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
@@ -108,20 +109,35 @@ h2 small{font:400 .8rem var(--body);color:var(--muted)}
 .rainaxis{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;font-size:.72rem;color:var(--muted);margin-top:4px;font-variant-numeric:tabular-nums;text-align:center}
 
 .hours{display:flex;gap:4px;overflow-x:auto;margin:0 -16px;padding:0 16px 4px;scrollbar-width:thin}
-.h{flex:none;width:58px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0;border-radius:12px;font-variant-numeric:tabular-nums}
+.h{flex:none;width:64px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0;border-radius:12px;font-variant-numeric:tabular-nums}
 .h.now{background:var(--surface-2)}
 .h .hh{font-size:.78rem;color:var(--muted)}
 .h .ic{font-size:1.4rem;line-height:1}
 .h .tt{font-weight:700}
 .h .pp{font-size:.74rem;color:var(--rain);min-height:1em}
+.h .rb{width:14px;height:28px;border-radius:3px;background:var(--surface-2);display:flex;align-items:flex-end;overflow:hidden}
+.h .rb i{display:block;width:100%;background:var(--rain)}
+.h .mm{font-size:.72rem;color:var(--rain);min-height:1em}
+.h .wd{display:flex;flex-direction:column;align-items:center;gap:1px;font-size:.74rem;color:var(--muted)}
+.h .wd svg{width:16px;height:16px}
+.h .wd b{color:var(--fg);font-size:.8rem}
+.h.day0{border-left:2px solid var(--line);border-radius:0 12px 12px 0}
+.hlegend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.75rem;color:var(--muted);margin-top:6px}
 
 .days{display:flex;flex-direction:column}
-.d{display:grid;grid-template-columns:4.2rem 2rem 3.4rem 1fr;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
+.d{display:grid;grid-template-columns:4.6rem 1.8rem 4.4rem 1fr;align-items:center;gap:8px;padding:10px 0;border:0;border-top:1px solid var(--line);font-variant-numeric:tabular-nums;
+  width:100%;background:none;text-align:left;cursor:pointer}
+.d .dn small{display:block;font-weight:400;font-size:.75rem;color:var(--muted)}
+.d .pw{display:flex;flex-direction:column;gap:1px;font-size:.78rem}
+.d .pw .wv{color:var(--muted)}
+.d[aria-expanded="true"]{background:var(--surface-2);border-radius:10px;padding-inline:6px;margin-inline:-6px;width:calc(100% + 12px)}
+.dayhours{padding:6px 0 12px}
+.dayhours .hours{margin:0 -16px}
 .d:first-child{border-top:0}
 .d .dn{font-weight:700}
 .d .ic{font-size:1.35rem;text-align:center}
-.d .pr{font-size:.8rem;color:var(--rain)}
-.range{display:grid;grid-template-columns:2.4rem 1fr 2.4rem;align-items:center;gap:8px}
+.d .pr{color:var(--rain)}
+.range{display:grid;grid-template-columns:1.9rem 1fr 1.9rem;align-items:center;gap:6px}
 .range .lo{color:var(--muted);text-align:right}
 .range .hi{text-align:left;font-weight:700}
 .bar{height:6px;border-radius:3px;background:var(--surface-2);position:relative}
@@ -193,10 +209,11 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
     <section class="card">
       <h2>Por horas <small>próximas 24 h</small></h2>
       <div class="hours" id="hours"></div>
+      <div class="hlegend" id="hoursLegend" hidden><span>Barra azul: lluvia en mm</span><span>%: probabilidad de lluvia</span><span>Flecha: viento en km/h, debajo las rachas</span></div>
     </section>
 
     <section class="card">
-      <h2>Próximos 7 días</h2>
+      <h2>Próximos 14 días <small>toca un día para verlo por horas</small></h2>
       <div class="days" id="days"></div>
     </section>
 
@@ -513,10 +530,10 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
     if (key === lastKey && Date.now() - lastFetch < 5 * 60e3) return;
     const u = new URL('https://api.open-meteo.com/v1/forecast');
     u.search = new URLSearchParams({
-      latitude: p.lat, longitude: p.lon, timezone: 'auto', forecast_days: 7, forecast_minutely_15: 8, forecast_hours: 25,
+      latitude: p.lat, longitude: p.lon, timezone: 'auto', forecast_days: 14, forecast_minutely_15: 8,
       current: 'temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,is_day',
       minutely_15: 'precipitation',
-      hourly: 'temperature_2m,precipitation_probability,precipitation,weather_code,is_day',
+      hourly: 'temperature_2m,precipitation_probability,precipitation,weather_code,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m',
       daily: 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,sunrise,sunset'
     });
     try {
@@ -570,29 +587,68 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
     $('rainMsg').textContent = msg;
 
     // por horas
+    lastD = d;
     const ht = d.hourly.time;
     let h0 = ht.findIndex(t => t.slice(0, 13) === nowS.slice(0, 13)); if (h0 < 0) h0 = 0;
-    let html = '';
-    for (let i = h0; i < Math.min(ht.length, h0 + 24); i++) {
-      const hw = wmo(d.hourly.weather_code[i], d.hourly.is_day[i]);
-      const pp = d.hourly.precipitation_probability[i];
-      html += `<div class="h ${i === h0 ? 'now' : ''}"><span class="hh">${i === h0 ? 'Ahora' : ht[i].slice(11, 13) + 'h'}</span><span class="ic" title="${hw.text}">${hw.icon}</span><span class="tt">${Math.round(d.hourly.temperature_2m[i])}°</span><span class="pp">${pp >= 10 ? pp + '%' : ''}</span></div>`;
-    }
-    $('hours').innerHTML = html;
+    $('hours').innerHTML = hourCells(d, h0, Math.min(ht.length, h0 + 24), h0) + '';
+    $('hoursLegend').hidden = false;
 
     // días
     const lo = Math.min(...today.temperature_2m_min), hi = Math.max(...today.temperature_2m_max), span = Math.max(1, hi - lo);
     $('days').innerHTML = today.time.map((t, i) => {
       const dw = wmo(today.weather_code[i]);
       const dt = new Date(t + 'T12:00');
-      const name = i === 0 ? 'Hoy' : i === 1 ? 'Mañana' : dt.toLocaleDateString('es-ES', { weekday: 'short' }).replace('.', '');
+      const wd = dt.toLocaleDateString('es-ES', { weekday: 'short' }).replace('.', '');
+      const name = i === 0 ? 'Hoy' : i === 1 ? 'Mañana' : wd;
+      const sub = dt.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }).replace('.', '');
       const a = (today.temperature_2m_min[i] - lo) / span * 100, b = (today.temperature_2m_max[i] - lo) / span * 100;
-      const pr = today.precipitation_sum[i];
-      return `<div class="d"><span class="dn">${name}</span><span class="ic" title="${dw.text}">${dw.icon}</span>` +
-        `<span class="pr">${pr >= 0.1 ? fmt1(pr) + ' mm' : ''}</span>` +
-        `<span class="range"><span class="lo">${Math.round(today.temperature_2m_min[i])}°</span><span class="bar"><i style="left:${a}%;right:${100 - b}%"></i></span><span class="hi">${Math.round(today.temperature_2m_max[i])}°</span></span></div>`;
+      const pr = today.precipitation_sum[i], pp = today.precipitation_probability_max[i], wm = today.wind_speed_10m_max[i];
+      return `<button type="button" class="d" data-day="${t}" aria-expanded="false"><span class="dn">${name}<small>${sub}</small></span><span class="ic" title="${dw.text}">${dw.icon}</span>` +
+        `<span class="pw"><span class="pr">${pr >= 0.1 ? fmt1(pr) + ' mm' : (pp != null && pp >= 20 ? pp + '%' : '')}</span><span class="wv">${Math.round(wm)} km/h</span></span>` +
+        `<span class="range"><span class="lo">${Math.round(today.temperature_2m_min[i])}°</span><span class="bar"><i style="left:${a}%;right:${100 - b}%"></i></span><span class="hi">${Math.round(today.temperature_2m_max[i])}°</span></span></button>` +
+        `<div class="dayhours" hidden></div>`;
     }).join('');
+    if (openDay) toggleDay(openDay, true);
   }
+
+  // Casillas por horas: icono, temperatura, lluvia (barra + mm y %) y viento (flecha + km/h y rachas).
+  let lastD = null, openDay = null;
+  function hourCells(d, from, to, nowI) {
+    const H = d.hourly; let html = '';
+    for (let i = from; i < to; i++) {
+      const hw = wmo(H.weather_code[i], H.is_day[i]);
+      const pp = H.precipitation_probability[i], mm = H.precipitation[i] || 0;
+      const ws = Math.round(H.wind_speed_10m[i]), wdg = H.wind_direction_10m[i], gu = Math.round(H.wind_gusts_10m[i]);
+      const hh = H.time[i].slice(11, 13);
+      html += `<div class="h ${i === nowI ? 'now' : ''} ${hh === '00' && i !== from ? 'day0' : ''}">` +
+        `<span class="hh">${i === nowI ? 'Ahora' : hh + 'h'}</span>` +
+        `<span class="ic" title="${hw.text}">${hw.icon}</span>` +
+        `<span class="tt">${Math.round(H.temperature_2m[i])}°</span>` +
+        `<span class="rb" title="${fmt1(mm)} mm"><i style="height:${Math.min(100, mm / 4 * 100)}%"></i></span>` +
+        `<span class="mm">${mm >= 0.1 ? fmt1(mm) : ''}</span>` +
+        `<span class="pp">${pp != null && pp >= 10 ? pp + '%' : ''}</span>` +
+        `<span class="wd" title="Viento ${ws} km/h ${dir(wdg)}, rachas ${gu} km/h"><svg viewBox="0 0 24 24" style="transform:rotate(${(wdg + 180) % 360}deg)"><path d="M12 2 L18 14 L13.5 12 L13.5 22 L10.5 22 L10.5 12 L6 14 Z" fill="${windColor(ws)}" stroke="#0006" stroke-width=".8"/></svg><b>${ws}</b><span>${gu}</span></span></div>`;
+    }
+    return html;
+  }
+  function toggleDay(day, forceOpen) {
+    const btn = document.querySelector(`.d[data-day="${day}"]`);
+    if (!btn || !lastD) return;
+    const box = btn.nextElementSibling;
+    const open = forceOpen || btn.getAttribute('aria-expanded') !== 'true';
+    document.querySelectorAll('.d[aria-expanded="true"]').forEach(b => { b.setAttribute('aria-expanded', 'false'); b.nextElementSibling.hidden = true; b.nextElementSibling.innerHTML = ''; });
+    openDay = open ? day : null;
+    if (!open) return;
+    const ht = lastD.hourly.time, nowS = localIso(lastD.utc_offset_seconds || 0);
+    let from = ht.findIndex(t => t.startsWith(day)); if (from < 0) return;
+    let to = from; while (to < ht.length && ht[to].startsWith(day)) to++;
+    const nowI = ht.findIndex(t => t.slice(0, 13) === nowS.slice(0, 13));
+    if (nowI >= from && nowI < to) from = nowI;
+    btn.setAttribute('aria-expanded', 'true');
+    box.hidden = false;
+    box.innerHTML = `<div class="hours">${hourCells(lastD, from, to, nowI)}</div>`;
+  }
+  $('days').addEventListener('click', e => { const b = e.target.closest('.d'); if (b) toggleDay(b.dataset.day); });
 
   // ---------- refrescar ----------
   function refresh(recenter) {

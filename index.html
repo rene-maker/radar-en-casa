@@ -145,6 +145,13 @@ h2 small{font:400 .8rem var(--body);color:var(--muted)}
 .bar{height:6px;border-radius:3px;background:var(--surface-2);position:relative}
 .bar i{position:absolute;top:0;bottom:0;border-radius:3px;background:linear-gradient(90deg,var(--cold),var(--warm))}
 
+.install{display:flex;flex-direction:column;gap:12px}
+.install h2{margin:0}
+.install .opt{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px}
+.install .opt>div{display:flex;flex-direction:column;min-width:0;flex:1 1 12rem}
+.install .opt span{font-size:.85rem;color:var(--muted)}
+.install .howto{flex-basis:100%}
+.install a.btn{text-decoration:none}
 .foot{font-size:.75rem;color:var(--muted);text-align:center}
 .foot a{color:inherit}
 
@@ -220,7 +227,20 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
       <div class="days" id="days"></div>
     </section>
 
-    <p class="foot">Previsión: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> · Radar: <a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a> · Mapas: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>, Esri, OpenTopoMap<br>Tus lugares se guardan solo en este móvil.<br>Hecho por René Wisse · Uso personal, no comercial.<span id="apkLink" hidden><br><a href="radar-en-casa.apk">Descargar la app para Android con widget</a></span></p>
+    <section class="card install" id="installCard" hidden>
+      <h2>Instalar en el móvil</h2>
+      <div class="opt">
+        <div><b>App sin widget</b><span>Se instala desde Chrome, sin avisos de seguridad.</span></div>
+        <button class="btn" type="button" id="installBtn" hidden>Instalar</button>
+        <span class="howto" id="installHow">En Chrome: menú ⋮ y luego «Instalar app» o «Añadir a pantalla de inicio».</span>
+      </div>
+      <div class="opt" id="apkOpt" hidden>
+        <div><b>App con widget</b><span>Archivo para Android. Al instalarlo, Android pedirá permiso para «apps desconocidas».</span></div>
+        <a class="btn" href="radar-en-casa.apk">Descargar</a>
+      </div>
+    </section>
+
+    <p class="foot">Previsión: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> · Radar: <a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a> · Mapas: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>, Esri, OpenTopoMap<br>Tus lugares se guardan solo en este móvil.<br>Hecho por René Wisse · Uso personal, no comercial.</p>
   </main>
 </div>
 
@@ -725,7 +745,27 @@ dialog h3{font:700 1.1rem var(--display);margin:0 0 10px}
   };
 
   // ---------- arranque ----------
-  if (/Android/i.test(navigator.userAgent) && !window.RadarApp) $('apkLink').hidden = false;
+  // Tarjeta de instalación: solo en el navegador, no dentro de la app ya instalada.
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  if (!standalone && !window.RadarApp) {
+    $('installCard').hidden = false;
+    if (/Android/i.test(navigator.userAgent)) $('apkOpt').hidden = false;
+    if (/iPhone|iPad/i.test(navigator.userAgent)) $('installHow').textContent = 'En Safari: botón Compartir y luego «Añadir a pantalla de inicio».';
+  }
+  let installEvt = null;
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault(); installEvt = e;
+    $('installBtn').hidden = false; $('installHow').hidden = true;
+  });
+  $('installBtn').onclick = async () => {
+    if (!installEvt) return;
+    installEvt.prompt();
+    const r = await installEvt.userChoice.catch(() => null);
+    if (r && r.outcome === 'accepted') $('installCard').hidden = true;
+    installEvt = null; $('installBtn').hidden = true; $('installHow').hidden = false;
+  };
+  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  window.addEventListener('appinstalled', () => { $('installCard').hidden = true; });
   renderChips();
   if (state.selected !== 'me') refresh(true);
   locate(state.selected === 'me');
